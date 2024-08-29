@@ -1,14 +1,18 @@
 ﻿using System;
-using System.Net;
+using System.IO;
+using System.Net.Sockets;
+using System.Text;
 using System.Threading.Tasks;
 using System.Windows;
-using iTextSharp.text;
-using iTextSharp.text.pdf;
+using iText.Html2pdf;
+using iText.Kernel.Pdf;
+using HtmlAgilityPack;
+using iText.Layout;
 using Microsoft.Win32;
-using System.IO;
 using System.Reflection.Metadata;
 using System.Windows.Documents;
 using System.Text.RegularExpressions;
+using iText.StyledXmlParser.Jsoup.Nodes;
 
 namespace R5OfflineReports
 {
@@ -19,125 +23,232 @@ namespace R5OfflineReports
             InitializeComponent();
         }
 
-        public class DataFetcher
+public class HtmlFetcher
+    {
+        public static string FetchHtmlWithTcpClient(string ipAddress, int port, string requestUri)
         {
-            public string FetchHtml(string url)
+            try
             {
-                try
+                using (var client = new TcpClient(ipAddress, port))
+                using (var networkStream = client.GetStream())
+                using (var reader = new StreamReader(networkStream, Encoding.ASCII))  // Assuming server responds with ASCII encoding
+                using (var writer = new StreamWriter(networkStream, Encoding.ASCII))
                 {
-                    using (WebClient client = new WebClient())
+                    // Construct the HTTP request
+                    var request = $"GET {requestUri} HTTP/1.0\r\nHost: {ipAddress}\r\n\r\n";
+                    writer.Write(request);
+                    writer.Flush();
+
+                    // Read the response
+                    StringBuilder response = new StringBuilder();
+                    while (!reader.EndOfStream)
                     {
-                        // Optionally set any headers here if necessary
-                        // client.Headers[HttpRequestHeader.ContentType] = "application/x-www-form-urlencoded";
-                        string htmlContent = client.DownloadString(url);
-                        return htmlContent;
+                        response.Append((char)reader.Read());
+                    }
+
+                    // The response includes the HTTP headers and the body
+                    // Extract the HTML content after the headers
+                    var responseString = response.ToString();
+                    var responseBody = responseString.Substring(responseString.IndexOf("\r\n\r\n") + 4);
+
+                    return responseBody;
+                }
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine($"An error occurred: {e.Message}");
+                return null;
+            }
+        }
+    }
+
+
+    private void FetchHtmlButton_Click(object sender, RoutedEventArgs e)
+    {
+        string ipAddress = IpAddressTextBox.Text; // IP address input
+        if (string.IsNullOrEmpty(ipAddress))
+        {
+            MessageBox.Show("Please enter a valid IP address.");
+            return;
+        }
+
+        // For testing - 127.0.0.1:5500/RawHTML.html
+        int port = 5500; // Default HTTP port
+        string url = "/RawHTML.html"; // Default to root path
+        string htmlContent = HtmlFetcher.FetchHtmlWithTcpClient(ipAddress, port, url);
+        string formattedHtml = FormatHtmlBeforePdf(htmlContent);
+
+        if (!string.IsNullOrEmpty(htmlContent))
+        {
+            HtmlTextBox.Text = formattedHtml;
+        }
+        else
+        {
+            MessageBox.Show("Failed to fetch HTML content.");
+        }
+    }
+
+
+
+
+public string FormatHtmlBeforePdf(string htmlContent)
+    {
+        var doc = new HtmlDocument();
+        doc.LoadHtml(htmlContent);
+
+        // Step 1: Keep only <h3>, <h4>, and <h5> elements. Remove everything else.
+        var nodesToKeep = doc.DocumentNode.SelectNodes("//h3|//h4|//h5")?.ToList() ?? new List<HtmlNode>();
+        doc.DocumentNode.RemoveAllChildren();  // Clear the document
+        foreach (var node in nodesToKeep)
+        {
+            doc.DocumentNode.AppendChild(node);  // Append only the <h3>, <h4>, and <h5> elements back
+        }
+
+        // Step 2: Filter <h3> elements to keep only those containing the word "Issues"
+        var h3Elements = doc.DocumentNode.SelectNodes("//h3").ToList();
+        foreach (var h3 in h3Elements)
+        {
+            if (!h3.InnerText.Contains("Issues"))
+            {
+                h3.Remove();
+            }
+                else
+                {
+                    // Remove child elements but keep their text content
+                    h3.InnerHtml = h3.InnerText;
+                }
+
+            }
+
+        // Step 3: Filter <h5> elements and remove those containing "Supervision" but not "OFFLINE"
+        var h5Elements = doc.DocumentNode.SelectNodes("//h5").ToList();
+        foreach (var h5 in h5Elements)
+        {
+            if (h5.InnerText.Contains("Supervision") && !h5.InnerText.Contains("OFFLINE"))
+            {
+                h5.Remove();
+            }
+                else
+                {
+                    // Remove child elements but keep their text content
+                    h5.InnerHtml = h5.InnerText;
+                }
+            }
+
+        // Step 4: Filter <h4> elements to keep only those containing "OFFLINE"
+        var h4Elements = doc.DocumentNode.SelectNodes("//h4").ToList();
+        foreach (var h4 in h4Elements)
+        {
+            if (!h4.InnerText.Contains("OFFLINE") && !h4.InnerText.Contains("Issues"))
+            {
+                h4.Remove();
+            }
+                else
+                {
+                    // Remove child elements but keep their text content
+                    h4.InnerHtml = h4.InnerText;
+                }
+            }
+
+        // Step 5: Remove the word "Supervision:" from all remaining elements
+        foreach (var element in doc.DocumentNode.SelectNodes("//h3|//h4|//h5"))
+        {
+            element.InnerHtml = element.InnerHtml.Replace("Supervision:", "").Trim();
+        }
+
+        // Step 6: Remove all inline styling
+        var elementsWithStyle = doc.DocumentNode.SelectNodes("//*[@style]");
+        if (elementsWithStyle != null)
+        {
+            foreach (var element in elementsWithStyle)
+            {
+                element.Attributes["style"].Remove();
+            }
+        }
+
+        // Step 7: Normalize all remaining text (e.g., remove excess whitespace)
+        foreach (var element in doc.DocumentNode.Descendants())
+        {
+            if (element.NodeType == HtmlNodeType.Text)
+            {
+                element.InnerHtml = System.Text.RegularExpressions.Regex.Replace(element.InnerText, @"\s+", " ").Trim();
+            }
+        }
+
+        // Step 8: Add an <h1> element at the top of the document that says "R5 Offline Report"
+        var bodyNode = doc.DocumentNode.SelectSingleNode("//body") ?? doc.DocumentNode;
+        var h1Node = doc.CreateElement("h1");
+        h1Node.InnerHtml = "R5 Offline Report";
+        bodyNode.PrependChild(h1Node);
+
+            // Step 9: Add HTML boilerplate
+            var finalHtml = $@"
+<!DOCTYPE html>
+<html lang=""en"">
+<head>
+    <meta charset=""UTF-8"">
+    <meta name=""viewport"" content=""width=device-width, initial-scale=1.0"">
+    <title>R5 Offline Report</title>
+    <style>
+        h1 {{ color: blue; }}
+        h3 {{ color: black; }}
+        h4 {{ color: red; }}
+    </style>
+</head>
+<body>
+    {doc.DocumentNode.InnerHtml}
+</body>
+</html>";
+
+            // Return the complete HTML document
+            return finalHtml;
+
+    }
+
+
+    public class PdfConverter
+        {
+            public static void ConvertHtmlToStyledPdf(string htmlContent, string outputPath)
+            {
+                // Create a PdfWriter instance, linking it to the output PDF file
+                using (FileStream fileStream = new FileStream(outputPath, FileMode.Create))
+                {
+                    // Initialize the PDF document
+                    using (PdfDocument pdfDocument = new PdfDocument(new PdfWriter(fileStream)))
+                    {
+                        // Convert HTML to PDF using the pdfHTML module
+                        HtmlConverter.ConvertToPdf(htmlContent, pdfDocument, new ConverterProperties());
                     }
                 }
-                catch (Exception e)
-                {
-                    Console.WriteLine($"Error fetching HTML: {e.Message}");
-                    return null;
-                }
             }
-        }
-
-        private void FetchHtmlButton_Click(object sender, RoutedEventArgs e)
-        {
-            string ipAddress = IpAddressTextBox.Text; // Assuming you have a TextBox for IP address input
-            if (string.IsNullOrEmpty(ipAddress))
-            {
-                MessageBox.Show("Please enter a valid IP address.");
-                return;
-            }
-
-            string url = $"http://{ipAddress}"; // Construct the URL from the IP address
-            DataFetcher fetcher = new DataFetcher();
-            string htmlContent = fetcher.FetchHtml(url);
-
-            if (htmlContent != null)
-            {
-                HtmlTextBox.Text = htmlContent; // Assuming you have a TextBox to display the HTML
-            }
-            else
-            {
-                MessageBox.Show("Failed to fetch HTML content.");
-            }
-        }
-
-
-
-        public string FormatHtmlBeforePdf(string htmlContent)
-        {
-            // Step 1: Remove all hyperlinks and buttons
-            string noLinks = Regex.Replace(htmlContent, @"<a[^>]*>.*?</a>", "", RegexOptions.Singleline);
-            string noButtons = Regex.Replace(noLinks, @"<input[^>]*type=""submit""[^>]*>", "");
-
-            // Step 2: Filter h4 elements to keep only those containing "OFFLINE"
-            MatchCollection allH4 = Regex.Matches(noButtons, @"<h4[^>]*>.*?</h4>", RegexOptions.Singleline);
-            string htmlWithoutH4 = Regex.Replace(noButtons, @"<h4[^>]*>.*?</h4>", "", RegexOptions.Singleline);
-            foreach (Match h4 in allH4)
-            {
-                if (h4.Value.Contains("OFFLINE"))
-                {
-                    htmlWithoutH4 += h4.Value;  // Add back only the h4s with "OFFLINE"
-                }
-            }
-
-            // Step 3: Remove the word "Supervision" from all h4 elements
-            string finalHtml = Regex.Replace(htmlWithoutH4, "Supervision", "");
-
-            return finalHtml;
         }
 
         private void SaveAsPdfButton_Click(object sender, RoutedEventArgs e)
         {
-            string rawHtmlContent = HtmlTextBox.Text;
+            string formattedHtml = HtmlTextBox.Text;  // This should contain the final formatted HTML
 
-            if (string.IsNullOrEmpty(rawHtmlContent))
+            if (string.IsNullOrEmpty(formattedHtml))
             {
-                MessageBox.Show("No HTML content to save.");
+                MessageBox.Show("No content available to save as PDF.");
                 return;
             }
 
-            // Ask the user if they want to save the content as a PDF
-            MessageBoxResult result = MessageBox.Show("Would you like to save this content as a PDF?", "Save as PDF", MessageBoxButton.YesNo);
+            // Specify the path where the PDF file should be saved
+            string outputPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), "FormattedOutput.pdf");
 
-            if (result == MessageBoxResult.Yes)
+            try
             {
-                // Format the HTML before saving
-                string formattedHtml = FormatHtmlBeforePdf(rawHtmlContent);
-
-                // Save the formatted HTML as PDF
-                SaveHtmlAsPdf(formattedHtml);
-
-                MessageBox.Show("PDF saved successfully!");
-                // Clear text box and go back to initial state
-                IpAddressTextBox.Text = string.Empty;
-                HtmlTextBox.Text = string.Empty;
+                PdfConverter.ConvertHtmlToStyledPdf(formattedHtml, outputPath);
+                MessageBox.Show($"PDF successfully saved to: {outputPath}");
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"An error occurred while saving the PDF: {ex.Message}");
             }
         }
 
-        private void SaveHtmlAsPdf(string htmlContent)
-        {
-            SaveFileDialog saveFileDialog = new SaveFileDialog
-            {
-                Filter = "PDF Files (*.pdf)|*.pdf",
-                DefaultExt = "pdf"
-            };
 
-            if (saveFileDialog.ShowDialog() == true)
-            {
-                using (FileStream stream = new FileStream(saveFileDialog.FileName, FileMode.Create))
-                {
-                    iTextSharp.text.Document pdfDoc = new iTextSharp.text.Document(PageSize.A4, 25, 25, 30, 30);
-                    PdfWriter writer = PdfWriter.GetInstance(pdfDoc, stream);
-                    pdfDoc.Open();
-                    pdfDoc.Add(new iTextSharp.text.Paragraph(htmlContent)); // Assumes you have a way to convert HTML to text for PDF
-                    pdfDoc.Close();
-                    writer.Close();
-                }
-            }
-        }
+
 
     }
 }
