@@ -4,15 +4,14 @@ using System.Net.Sockets;
 using System.Text;
 using System.Threading.Tasks;
 using System.Windows;
-using iText.Html2pdf;
-using iText.Kernel.Pdf;
+using PuppeteerSharp;
 using HtmlAgilityPack;
-using iText.Layout;
 using Microsoft.Win32;
 using System.Reflection.Metadata;
 using System.Windows.Documents;
 using System.Text.RegularExpressions;
-using iText.StyledXmlParser.Jsoup.Nodes;
+using System.Runtime.Loader;
+using PuppeteerSharp.Media;
 
 namespace R5OfflineReports
 {
@@ -73,8 +72,8 @@ public class HtmlFetcher
         }
 
         // For testing - 127.0.0.1:5500/RawHTML.html
-        int port = 5500; // Default HTTP port
-        string url = "/RawHTML.html"; // Default to root path
+        int port = 80; // Default HTTP port
+        string url = ""; // Default to root path
         string htmlContent = HtmlFetcher.FetchHtmlWithTcpClient(ipAddress, port, url);
         string formattedHtml = FormatHtmlBeforePdf(htmlContent);
 
@@ -205,47 +204,60 @@ public string FormatHtmlBeforePdf(string htmlContent)
 
     }
 
-
-    public class PdfConverter
+        public class PdfService
         {
-            public static void ConvertHtmlToStyledPdf(string htmlContent, string outputPath)
+            public async Task ConvertHtmlToPdf(string htmlContent, string outputPath)
             {
-                // Create a PdfWriter instance, linking it to the output PDF file
-                using (FileStream fileStream = new FileStream(outputPath, FileMode.Create))
+                // Create a BrowserFetcher instance and download the latest version of Chromium
+                var browserFetcher = new BrowserFetcher();
+                await browserFetcher.DownloadAsync(); // Automatically downloads the latest Chromium
+
+                // Launch Chromium in headless mode
+                using (var browser = await Puppeteer.LaunchAsync(new LaunchOptions { Headless = true }))
+                using (var page = await browser.NewPageAsync())
                 {
-                    // Initialize the PDF document
-                    using (PdfDocument pdfDocument = new PdfDocument(new PdfWriter(fileStream)))
+                    // Set the content of the page to the HTML you want to convert
+                    await page.SetContentAsync(htmlContent);
+
+                    // Save the page as a PDF
+                    await page.PdfAsync(outputPath, new PdfOptions
                     {
-                        // Convert HTML to PDF using the pdfHTML module
-                        HtmlConverter.ConvertToPdf(htmlContent, pdfDocument, new ConverterProperties());
-                    }
+                        Format = PaperFormat.A4,
+                        PrintBackground = true // Include CSS background colors in the PDF
+                    });
                 }
             }
         }
 
-        private void SaveAsPdfButton_Click(object sender, RoutedEventArgs e)
+
+        private async void SaveAsPdfButton_Click(object sender, RoutedEventArgs e)
         {
-            string formattedHtml = HtmlTextBox.Text;  // This should contain the final formatted HTML
+            SaveFileDialog saveFileDialog = new SaveFileDialog();
+            saveFileDialog.Filter = "PDF Files (*.pdf)|*.pdf";
+            saveFileDialog.DefaultExt = "pdf";
+            saveFileDialog.Title = "Save PDF File";
+            saveFileDialog.FileName = "R5 Offline Report";
 
-            if (string.IsNullOrEmpty(formattedHtml))
+            if (saveFileDialog.ShowDialog() == true)
             {
-                MessageBox.Show("No content available to save as PDF.");
-                return;
-            }
+                string outputPath = saveFileDialog.FileName;
+                //string testHtml = "<html><body><h1>Test PDF</h1><p>This is a test.</p></body></html>";
+                // Assuming formattedHtml contains the final HTML to convert
+                string formattedHtml = FormatHtmlBeforePdf(HtmlTextBox.Text);
 
-            // Specify the path where the PDF file should be saved
-            string outputPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), "FormattedOutput.pdf");
-
-            try
-            {
-                PdfConverter.ConvertHtmlToStyledPdf(formattedHtml, outputPath);
-                MessageBox.Show($"PDF successfully saved to: {outputPath}");
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"An error occurred while saving the PDF: {ex.Message}");
+                try
+                {
+                    PdfService pdfService = new PdfService();
+                    await pdfService.ConvertHtmlToPdf(formattedHtml, outputPath);
+                    MessageBox.Show("PDF saved successfully at " + outputPath);
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"Failed to save PDF: {ex.Message}");
+                }
             }
         }
+
 
 
 

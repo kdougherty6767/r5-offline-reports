@@ -6,12 +6,14 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
+    <PlatformTarget>AnyCPU</PlatformTarget>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="HtmlAgilityPack" Version="1.11.64" />
     <PackageReference Include="itext7" Version="8.0.5" />
     <PackageReference Include="itext7.pdfhtml" Version="5.0.5" />
+    <PackageReference Include="PuppeteerSharp" Version="20.0.0" />
   </ItemGroup>
 
 </Project>
