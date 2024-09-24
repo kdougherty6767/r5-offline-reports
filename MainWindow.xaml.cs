@@ -286,6 +286,7 @@ namespace R5OfflineReports
 
                 // Get the current date and time
                 string dateTimeStamp = DateTime.Now.ToString("MMMM dd, yyyy HH:mm");
+                string fileDateTimeStamp = DateTime.Now.ToString("yyyy-MM-dd_HH-mm");
 
                 // Start building the final HTML document, adding the styling and HTML boilerplate
                 var finalHtmlContent = new StringBuilder();
@@ -334,11 +335,13 @@ namespace R5OfflineReports
                 saveFileDialog.Filter = "PDF Files (*.pdf)|*.pdf";
                 saveFileDialog.DefaultExt = "pdf";
                 saveFileDialog.Title = "Save PDF File";
-                saveFileDialog.FileName = "R5 Offline Report";
+                saveFileDialog.FileName = $"R5 Offline Report - {fileDateTimeStamp}";
 
                 if (saveFileDialog.ShowDialog() == true)
                 {
                     string outputPath = saveFileDialog.FileName;
+                    StatusMessage.Text = "Saving...";
+                    StatusMessage.Foreground = new SolidColorBrush(Colors.Orange);
 
                     try
                     {
@@ -350,6 +353,8 @@ namespace R5OfflineReports
                     {
                         MessageBox.Show($"Failed to save PDF: {ex.Message}");
                     }
+                    StatusMessage.Text = "Saved!";
+                    StatusMessage.Foreground = new SolidColorBrush(Colors.Green);
                 }
             }
         }
