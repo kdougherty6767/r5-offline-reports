@@ -130,13 +130,16 @@ namespace R5OfflineReports
                 doc.DocumentNode.AppendChild(node);  // Append only the <h3>, <h4>, and <h5> elements back
             }
 
-            // Step 2: Filter <h3> elements to keep only those containing the word "Issues"
+            // Step 2: Filter <h3> elements and remove those that do not contain 'color: Red' or 'color: Gray' in their inline style
             var h3Elements = doc.DocumentNode.SelectNodes("//h3").ToList();
             foreach (var h3 in h3Elements)
             {
-                if (!h3.InnerText.Contains("Issues"))
+                // Check if the h3 element has a style attribute and contains 'color: Red' or 'color: Gray'
+                var styleAttribute = h3.GetAttributeValue("style", string.Empty).ToLower();
+
+                if (!styleAttribute.Contains("color: red") && !styleAttribute.Contains("color: gray"))
                 {
-                    h3.Remove();
+                    h3.Remove(); // Remove h3 elements that don't have 'color: Red' or 'color: Gray' in their inline style
                 }
                 else
                 {
@@ -145,13 +148,17 @@ namespace R5OfflineReports
                 }
             }
 
-            // Step 3: Filter <h5> elements and remove those containing "Supervision" but not "OFFLINE"
+
+            // Step 3: Filter <h5> elements and remove those not containing 'color: Red' in their inline style
             var h5Elements = doc.DocumentNode.SelectNodes("//h5").ToList();
             foreach (var h5 in h5Elements)
             {
-                if (h5.InnerText.Contains("Supervision") && !h5.InnerText.Contains("OFFLINE"))
+                // Check if the h5 element has a style attribute and contains 'color: Red'
+                var styleAttribute = h5.GetAttributeValue("style", string.Empty).ToLower();
+
+                if (!styleAttribute.Contains("color: red"))
                 {
-                    h5.Remove();
+                    h5.Remove(); // Remove h5 elements that don't have 'color: Red' in their inline style
                 }
                 else
                 {
@@ -160,13 +167,17 @@ namespace R5OfflineReports
                 }
             }
 
-            // Step 4: Filter <h4> elements to keep only those containing "OFFLINE"
+
+            // Step 3: Filter <h4> elements and remove those that do not contain 'color: Red' or 'color: Gray' in their inline style
             var h4Elements = doc.DocumentNode.SelectNodes("//h4").ToList();
             foreach (var h4 in h4Elements)
             {
-                if (!h4.InnerText.Contains("OFFLINE") && !h4.InnerText.Contains("Issues"))
+                // Check if the h4 element has a style attribute and contains 'color: Red' or 'color: Gray'
+                var styleAttribute = h4.GetAttributeValue("style", string.Empty).ToLower();
+
+                if (!styleAttribute.Contains("color: red") && !styleAttribute.Contains("color: gray"))
                 {
-                    h4.Remove();
+                    h4.Remove(); // Remove h4 elements that don't have 'color: Red' or 'color: Gray' in their inline style
                 }
                 else
                 {
@@ -174,6 +185,7 @@ namespace R5OfflineReports
                     h4.InnerHtml = h4.InnerText;
                 }
             }
+
 
             // Step 5: Remove the word "Supervision:" from all remaining elements
             foreach (var element in doc.DocumentNode.SelectNodes("//h3|//h4|//h5"))
